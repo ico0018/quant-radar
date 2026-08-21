@@ -14,7 +14,8 @@ class Candle:
     high: float
     low: float
     close: float
-    volume: float
+    base_volume: float
+    quote_volume: float
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BITGET_CONTRACTS_PATH = "/api/v2/mix/market/contracts"
 BITGET_CANDLES_PATH = "/api/v2/mix/market/candles"
+BITGET_HISTORY_CANDLES_PATH = "/api/v2/mix/market/history-candles"
 USDT_FUTURES_PRODUCT_TYPE = "USDT-FUTURES"
 SUPPORTED_GRANULARITIES = frozenset({"1m", "5m", "15m", "1H", "4H"})
 INDICATOR_WINDOWS = (20, 60, 120)
@@ -22,4 +23,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     bitget_rest_url: str = "https://api.bitget.com"
     bitget_request_timeout_seconds: float = Field(default=10.0, gt=0)
+    bitget_max_retries: int = Field(default=3, ge=0, le=10)
+    bitget_retry_delay_seconds: float = Field(default=0.5, ge=0)
+    bitget_rate_limit_wait_seconds: float = Field(default=0.05, ge=0)
+    bitget_history_concurrency: int = Field(default=4, ge=1, le=10)
     bitget_usdt_futures_product_type: str = USDT_FUTURES_PRODUCT_TYPE

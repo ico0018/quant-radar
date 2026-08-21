@@ -16,7 +16,7 @@ from app.market_data.bitget import (
 
 def make_client(handler: httpx.MockTransport) -> BitgetRestClient:
     return BitgetRestClient(
-        Settings(_env_file=None, bitget_rest_url="https://bitget.test"),
+        Settings(_env_file=None, bitget_rest_url="https://bitget.test", bitget_retry_delay_seconds=0),
         httpx.AsyncClient(base_url="https://bitget.test", transport=handler),
     )
 
@@ -55,8 +55,8 @@ def test_get_candles_normalizes_and_sorts_response() -> None:
             json={
                 "code": "00000",
                 "data": [
-                    ["2000", "101", "103", "100", "102", "12.5"],
-                    ["1000", "99", "102", "98", "101", "10"],
+                    ["2000", "101", "103", "100", "102", "12.5", "1275"],
+                    ["1000", "99", "102", "98", "101", "10", "1010"],
                 ],
             },
         )
@@ -64,12 +64,13 @@ def test_get_candles_normalizes_and_sorts_response() -> None:
     candles = asyncio.run(make_client(httpx.MockTransport(handler)).get_candles("btcusdt", "1H"))
     assert [candle.timestamp for candle in candles] == [1000, 2000]
     assert candles[0].close == 101.0
-    assert candles[1].volume == 12.5
+    assert candles[1].base_volume == 12.5
+    assert candles[1].quote_volume == 1275.0
 
 
 @pytest.mark.parametrize("payload,error", [
     ({"code": "00000", "data": []}, BitgetEmptyDataError),
-    ({"code": "00000", "data": [["bad", "1", "2", "0", "1", "4"]]}, BitgetInvalidResponseError),
+    ({"code": "00000", "data": [["bad", "1", "2", "0", "1", "4", "4"]]}, BitgetInvalidResponseError),
     ({"code": "40001", "msg": "bad request"}, BitgetApiError),
 ])
 def test_get_candles_rejects_bad_api_payloads(payload: dict, error: type[Exception]) -> None:

@@ -14,7 +14,8 @@ def candles(count: int) -> list[Candle]:
             high=float(index + 1),
             low=float(index - 1),
             close=float(index),
-            volume=10.0,
+            base_volume=10.0,
+            quote_volume=10.0 * float(index),
         )
         for index in range(1, count + 1)
     ]

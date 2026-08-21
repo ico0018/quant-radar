@@ -6,7 +6,7 @@ A rule-driven crypto market radar for Bitget. Phase 1 provides a reliable, publi
 
 - Public Bitget REST client for USDT perpetual contracts and historical candles
 - Supported candle intervals: `1m`, `5m`, `15m`, `1H`, `4H`
-- Internal OHLCV candle model: timestamp, open, high, low, close, volume
+- Internal OHLCV candle model: timestamp, open, high, low, close, base_volume, quote_volume
 - MA and EMA trend indicators for 20, 60, and 120 periods
 - Explicit timeout, HTTP, API-payload, invalid-response, and empty-data errors
 
@@ -43,6 +43,17 @@ Configuration defaults are in `app/config.py`; environment overrides are documen
 ```bash
 pytest -q
 ```
+
+## Historical Data
+
+Phase 2A downloads BTCUSDT historical USDT-perpetual candles through Bitget's historical API and caches them in UTC Parquet files. A single Parquet file per timeframe keeps the first version simple and makes incremental updates easy: existing timestamps are read, only newly completed tail candles are requested, then the sorted/deduplicated cache is atomically replaced. Historical gaps are retained in the quality report rather than silently retried on every run.
+
+```bash
+python -m app.data.download --symbol BTCUSDT --timeframe 15m --days 730
+python -m app.data.download --symbol BTCUSDT --timeframe 1H --days 730
+```
+
+Files are stored at `data/parquet/BTCUSDT/<timeframe>/candles.parquet`. Each run prints a UTC data-quality report with candle count, time range, duplicates removed, missing periods, and invalid OHLC count. Re-running the command only requests currently missing or newly completed candle intervals.
 
 ## Security
 

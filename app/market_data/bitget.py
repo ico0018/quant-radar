@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
+import logging
 from typing import Any
 
 import httpx
@@ -10,10 +12,13 @@ import httpx
 from app.config import (
     BITGET_CANDLES_PATH,
     BITGET_CONTRACTS_PATH,
+    BITGET_HISTORY_CANDLES_PATH,
     SUPPORTED_GRANULARITIES,
     Settings,
 )
 from app.models import Candle, FuturesContract
+
+logger = logging.getLogger(__name__)
 
 
 class BitgetMarketDataError(RuntimeError):
@@ -131,18 +136,59 @@ class BitgetRestClient:
         candles = [self._parse_candle(row) for row in data]
         return sorted(candles, key=lambda candle: candle.timestamp)
 
+    async def get_historical_candles(
+        self,
+        symbol: str,
+        granularity: str,
+        *,
+        start_time: int,
+        end_time: int,
+        limit: int = 200,
+    ) -> list[Candle]:
+        """Return one bounded page from Bitget's historical-candles endpoint.
+
+        Timestamps are Unix milliseconds in UTC. Callers paginate windows rather
+        than relying on the recent-candles endpoint.
+        """
+        if granularity not in SUPPORTED_GRANULARITIES:
+            raise ValueError(f"unsupported granularity: {granularity}")
+        if not symbol or start_time < 0 or end_time <= start_time:
+            raise ValueError("symbol and a valid UTC millisecond time range are required")
+        if not 1 <= limit <= 200:
+            raise ValueError("historical candle limit must be between 1 and 200")
+        data = await self._get_data(
+            BITGET_HISTORY_CANDLES_PATH,
+            {
+                "symbol": symbol.upper(),
+                "productType": self.settings.bitget_usdt_futures_product_type,
+                "granularity": granularity,
+                "startTime": start_time,
+                "endTime": end_time,
+                "limit": limit,
+            },
+        )
+        if not isinstance(data, list):
+            raise BitgetInvalidResponseError("historical candles response data must be a list")
+        return sorted([self._parse_candle(row) for row in data], key=lambda candle: candle.timestamp)
+
     async def _get_data(self, path: str, params: dict[str, Any]) -> Any:
-        try:
-            response = await self._client.get(path, params=params)
-            response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            raise BitgetTimeoutError(f"Bitget request timed out: {path}") from exc
-        except httpx.HTTPStatusError as exc:
-            raise BitgetHttpError(
-                f"Bitget returned HTTP {exc.response.status_code}: {path}"
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise BitgetHttpError(f"Bitget request failed: {path}") from exc
+        response: httpx.Response | None = None
+        for attempt in range(self.settings.bitget_max_retries + 1):
+            try:
+                response = await self._client.get(path, params=params)
+                response.raise_for_status()
+                break
+            except httpx.TimeoutException:
+                error: BitgetMarketDataError = BitgetTimeoutError(f"Bitget request timed out: {path}")
+            except httpx.HTTPStatusError as exc:
+                error = BitgetHttpError(f"Bitget returned HTTP {exc.response.status_code}: {path}")
+            except httpx.HTTPError:
+                error = BitgetHttpError(f"Bitget request failed: {path}")
+            if attempt == self.settings.bitget_max_retries:
+                raise error
+            logger.warning("Bitget request failed (%s), retrying attempt %s/%s", error, attempt + 1, self.settings.bitget_max_retries)
+            await asyncio.sleep(self.settings.bitget_retry_delay_seconds * (attempt + 1))
+        assert response is not None
 
         try:
             payload = response.json()
@@ -160,8 +206,8 @@ class BitgetRestClient:
 
     @staticmethod
     def _parse_candle(row: Any) -> Candle:
-        if not isinstance(row, Sequence) or isinstance(row, (str, bytes)) or len(row) < 6:
-            raise BitgetInvalidResponseError("candle row must contain six values")
+        if not isinstance(row, Sequence) or isinstance(row, (str, bytes)) or len(row) < 7:
+            raise BitgetInvalidResponseError("candle row must contain seven values")
         try:
             return Candle(
                 timestamp=int(row[0]),
@@ -169,7 +215,8 @@ class BitgetRestClient:
                 high=float(row[2]),
                 low=float(row[3]),
                 close=float(row[4]),
-                volume=float(row[5]),
+                base_volume=float(row[5]),
+                quote_volume=float(row[6]),
             )
         except (TypeError, ValueError, IndexError) as exc:
             raise BitgetInvalidResponseError("candle row contains invalid values") from exc

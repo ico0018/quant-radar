@@ -12,6 +12,8 @@ venv/
 .vscode/
 .DS_Store
 *.log
-data/
+data/raw/
+data/parquet/
+reports/
 postgres_data/
 redis_data/

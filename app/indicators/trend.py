@@ -23,7 +23,8 @@ def calculate_trend_indicators(candles: Sequence[Candle]) -> pd.DataFrame:
                 "high": candle.high,
                 "low": candle.low,
                 "close": candle.close,
-                "volume": candle.volume,
+                "base_volume": candle.base_volume,
+                "quote_volume": candle.quote_volume,
             }
             for candle in sorted(candles, key=lambda item: item.timestamp)
         ]
