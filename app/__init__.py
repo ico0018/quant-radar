@@ -1,0 +1,1 @@
+"""Quant Radar application package."""
