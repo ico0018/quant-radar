@@ -46,7 +46,7 @@ pytest -q
 
 ## Historical Data
 
-Phase 2A downloads BTCUSDT historical USDT-perpetual candles through Bitget's historical API and caches them in UTC Parquet files. A single Parquet file per timeframe keeps the first version simple and makes incremental updates easy: existing timestamps are read, only newly completed tail candles are requested, then the sorted/deduplicated cache is atomically replaced. Historical gaps are retained in the quality report rather than silently retried on every run.
+Phase 2A downloads BTCUSDT historical USDT-perpetual candles through Bitget's historical API and caches them in UTC Parquet files. A single Parquet file per timeframe keeps the first version simple and makes incremental updates easy: existing timestamps are read, all missing start, middle, and tail ranges are requested, then the sorted/deduplicated cache is atomically replaced.
 
 ```bash
 python -m app.data.download --symbol BTCUSDT --timeframe 15m --days 730
@@ -57,10 +57,24 @@ Files are stored at `data/parquet/BTCUSDT/<timeframe>/candles.parquet`. Each run
 
 The downloader compensates for Bitget's history endpoint boundary semantics: the API returns the candle immediately before the supplied time boundary, so wire request bounds are shifted by one timeframe and then filtered back into the requested UTC range.
 
+## Backtest Engine
+
+Phase 2B adds a minimal local-data backtest foundation without a production strategy. `DatasetLoader` reads `data/parquet/<symbol>/<timeframe>/candles.parquet`, converts rows to the shared `Candle` model, sorts and revalidates the data, and rejects incomplete datasets by default. Optional timezone-aware `start` and `end` values filter a UTC `[start, end)` range.
+
+The engine processes one candle at a time in strict timestamp order. A strategy receives only the current and previous candles through `StrategyContext`; a signal emitted on candle N is queued and filled at candle N+1's open. It supports one long or short position, `EXIT`, fee rate, and slippage rate. Leverage, multiple positions, funding, liquidation, optimization, and real trading strategies are intentionally outside this phase.
+
+Run the validation-only demo strategy, which signals long on candle five and exit on candle ten:
+
+```bash
+python -m app.backtest.demo --symbol BTCUSDT --timeframe 15m
+```
+
+The demo requires a complete local Parquet dataset created by the historical-data commands above. Its fixed-index strategy lives only in the demo and is not a production strategy.
+
 ## Security
 
 Never commit API keys, bot tokens, SSH private keys, passwords, or production `.env` files.
 
 ## Status
 
-Phase 1: Bitget market-data layer and basic trend indicators.
+Phase 2B: quality-gated local dataset loader and minimal next-bar-open backtest engine.
