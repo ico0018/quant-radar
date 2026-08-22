@@ -36,6 +36,12 @@ class BitgetPublicClient:
         if self._owns_client:
             await self._client.aclose()
 
+    async def __aenter__(self) -> "BitgetPublicClient":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        await self.aclose()
+
     async def get_ticker(self, symbol: str) -> Ticker:
         normalized_symbol = normalize_symbol(symbol)
         payload = await self._get(SPOT_TICKERS_PATH, {"symbol": normalized_symbol})

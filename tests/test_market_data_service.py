@@ -30,3 +30,14 @@ def test_get_recent_candles_delegates_to_exchange() -> None:
     candles = asyncio.run(MarketDataService(exchange).get_recent_candles("ETHUSDT", "1h", 20))
     assert len(candles) == 1
     assert exchange.calls == [("candles", "ETHUSDT", "1h", 20)]
+
+
+class FailingCache:
+    async def set_ticker(self, ticker: Ticker) -> None:
+        raise ConnectionError("redis unavailable")
+
+
+def test_cache_failure_does_not_crash_ticker_handling() -> None:
+    ticker = Ticker(symbol="BTCUSDT", last_price="1", timestamp_ms=1)
+    service = MarketDataService(FakeExchangeClient(), FailingCache())  # type: ignore[arg-type]
+    asyncio.run(service.handle_ticker(ticker))

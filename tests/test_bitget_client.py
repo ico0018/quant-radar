@@ -22,7 +22,7 @@ def test_get_ticker_success() -> None:
         try:
             return await client.get_ticker("btc-usdt")
         finally:
-            await client._client.aclose()
+            await client.aclose()
 
     ticker = asyncio.run(run())
     assert ticker.symbol == "BTCUSDT"
@@ -40,7 +40,7 @@ def test_get_candles_success() -> None:
         try:
             return await client.get_candles("BTC/USDT", "5m", 1)
         finally:
-            await client._client.aclose()
+            await client.aclose()
 
     candles = asyncio.run(run())
     assert candles[0].close == Decimal("1.5")
@@ -54,7 +54,7 @@ def test_bitget_error_code_raises() -> None:
             with pytest.raises(BitgetAPIError, match="40001"):
                 await client.get_ticker("BTCUSDT")
         finally:
-            await client._client.aclose()
+            await client.aclose()
 
     asyncio.run(run())
 
@@ -67,7 +67,7 @@ def test_http_failure_raises() -> None:
                 await client.get_ticker("BTCUSDT")
             return error.value
         finally:
-            await client._client.aclose()
+            await client.aclose()
 
     assert asyncio.run(run()).code == "500"
 
@@ -85,6 +85,17 @@ def test_unsupported_interval_raises() -> None:
             with pytest.raises(ValueError, match="unsupported interval"):
                 await client.get_candles("BTCUSDT", "2h")
         finally:
-            await client._client.aclose()
+            await client.aclose()
+
+    asyncio.run(run())
+
+
+def test_context_manager_does_not_close_injected_http_client() -> None:
+    async def run() -> None:
+        external_client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+        async with BitgetPublicClient("https://api.bitget.com", client=external_client):
+            pass
+        assert not external_client.is_closed
+        await external_client.aclose()
 
     asyncio.run(run())

@@ -13,3 +13,9 @@ def test_settings_reads_environment(monkeypatch) -> None:
     get_settings.cache_clear()
     assert get_settings().bitget_rest_url == "https://market.example.test"
     get_settings.cache_clear()
+
+
+def test_settings_parses_csv_market_symbols(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_SYMBOLS", "btc-usdt, ETH/USDT")
+    settings = Settings(_env_file=None)
+    assert settings.market_symbols == ["btc-usdt", "ETH/USDT"]
