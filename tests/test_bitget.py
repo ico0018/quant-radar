@@ -98,3 +98,14 @@ def test_get_candles_rejects_unsupported_granularity() -> None:
     client = make_client(httpx.MockTransport(lambda _: httpx.Response(200)))
     with pytest.raises(ValueError, match="unsupported granularity"):
         asyncio.run(client.get_candles("BTCUSDT", "1D"))
+
+
+def test_get_historical_candles_adjusts_bitget_boundary_semantics() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["startTime"] == "900000"
+        assert request.url.params["endTime"] == "1799999"
+        return httpx.Response(200, json={"code": "00000", "data": [["900000", "1", "2", "0", "1.5", "4", "6"]]})
+
+    client = make_client(httpx.MockTransport(handler))
+    candles = asyncio.run(client.get_historical_candles("BTCUSDT", "15m", start_time=0, end_time=900_000 - 1))
+    assert candles[0].timestamp == 900_000

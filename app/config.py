@@ -11,6 +11,13 @@ BITGET_CANDLES_PATH = "/api/v2/mix/market/candles"
 BITGET_HISTORY_CANDLES_PATH = "/api/v2/mix/market/history-candles"
 USDT_FUTURES_PRODUCT_TYPE = "USDT-FUTURES"
 SUPPORTED_GRANULARITIES = frozenset({"1m", "5m", "15m", "1H", "4H"})
+GRANULARITY_MILLISECONDS = {
+    "1m": 60_000,
+    "5m": 5 * 60_000,
+    "15m": 15 * 60_000,
+    "1H": 60 * 60_000,
+    "4H": 4 * 60 * 60_000,
+}
 INDICATOR_WINDOWS = (20, 60, 120)
 
 

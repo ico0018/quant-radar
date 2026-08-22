@@ -5,7 +5,7 @@ from pathlib import Path
 from app.config import Settings
 from app.data.downloader import HistoricalDataDownloader
 from app.data.quality import DataQualityError, missing_ranges, validate_candles
-from app.data.storage import load_candles, parquet_path
+from app.data.storage import load_candles, parquet_path, write_candles
 from app.models import Candle
 
 
@@ -19,6 +19,7 @@ def test_validation_deduplicates_and_reports_gaps() -> None:
     assert report.duplicate_count == 1
     assert report.missing_period_count == 1
     assert report.invalid_ohlc_count == 0
+    assert not report.is_complete
 
 
 def test_missing_ranges_groups_contiguous_missing_candles() -> None:
@@ -60,6 +61,23 @@ def test_downloader_paginates_writes_parquet_and_updates_incrementally(tmp_path:
     second = asyncio.run(downloader.download("BTCUSDT", "15m", 1 / 24, now))
     assert second.added_candles == 0
     assert len(client.calls) == calls_after_first
+
+
+def test_incremental_run_backfills_only_middle_missing_range(tmp_path: Path) -> None:
+    now = datetime(2026, 1, 1, 1, tzinfo=UTC)
+    timestamps = list(range(int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000), int(now.timestamp() * 1000), 900_000))
+    client = FakeHistoryClient([candle(timestamp) for timestamp in timestamps])
+    path = parquet_path(tmp_path, "BTCUSDT", "15m")
+    missing = {timestamps[1], timestamps[2], timestamps[3]}
+    write_candles(path, [item for item in client.candles if item.timestamp not in missing])
+    downloader = HistoricalDataDownloader(client, tmp_path, Settings(_env_file=None, bitget_rate_limit_wait_seconds=0))
+    result = asyncio.run(downloader.download("BTCUSDT", "15m", 1 / 24, now))
+    assert result.added_candles == 3
+    assert result.report.missing_period_count == 0
+    assert result.report.is_complete
+    assert len(client.calls) == 1
+    assert client.calls[0][0] == timestamps[1]
+    assert client.calls[0][1] == timestamps[-1] + 900_000 - 1
 
 
 def test_fetch_range_pages_history_requests(tmp_path: Path) -> None:

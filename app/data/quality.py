@@ -20,8 +20,14 @@ class DataQualityReport:
     missing_period_count: int
     invalid_ohlc_count: int
 
+    @property
+    def is_complete(self) -> bool:
+        """Whether this dataset has no missing periods or invalid rows."""
+        return self.missing_period_count == 0 and self.invalid_ohlc_count == 0
+
     def as_dict(self) -> dict[str, int | str | None]:
         data: dict[str, int | str | None] = asdict(self)
+        data["is_complete"] = self.is_complete
         for key in ("first_timestamp", "last_timestamp"):
             timestamp = data[key]
             data[key] = (

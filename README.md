@@ -55,6 +55,8 @@ python -m app.data.download --symbol BTCUSDT --timeframe 1H --days 730
 
 Files are stored at `data/parquet/BTCUSDT/<timeframe>/candles.parquet`. Each run prints a UTC data-quality report with candle count, time range, duplicates removed, missing periods, and invalid OHLC count. Re-running the command only requests currently missing or newly completed candle intervals.
 
+The downloader compensates for Bitget's history endpoint boundary semantics: the API returns the candle immediately before the supplied time boundary, so wire request bounds are shifted by one timeframe and then filtered back into the requested UTC range.
+
 ## Security
 
 Never commit API keys, bot tokens, SSH private keys, passwords, or production `.env` files.

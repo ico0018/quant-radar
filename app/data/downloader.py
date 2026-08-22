@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.config import Settings
-from app.data.quality import DataQualityReport, TIMEFRAME_MILLISECONDS, validate_candles
+from app.data.quality import DataQualityReport, TIMEFRAME_MILLISECONDS, missing_ranges, validate_candles
 from app.data.storage import load_candles, parquet_path, write_candles
 from app.market_data import BitgetRestClient
 from app.models import Candle
@@ -44,16 +44,21 @@ class HistoricalDataDownloader:
         existing = load_candles(path)
         existing, _ = validate_candles(existing, timeframe) if existing else ([], None)
         fetched: list[Candle] = []
-        cached_range = [c for c in existing if start <= c.timestamp < end]
-        if not cached_range:
-            fetched = await self._fetch_range(symbol, timeframe, start, end)
-        else:
-            # Incremental runs only request newly completed tail candles. Existing
-            # historical gaps remain visible in the quality report instead of
-            # silently causing expensive full-range re-downloads.
-            tail_start = max(c.timestamp for c in cached_range) + interval
-            if tail_start < end:
-                fetched = await self._fetch_range(symbol, timeframe, tail_start, end)
+        existing_timestamps = {c.timestamp for c in existing}
+        ranges = missing_ranges(existing_timestamps, start, end, timeframe)
+        logger.info("historical request range: start=%s end=%s timeframe=%s", start, end, timeframe)
+        for index in range(0, len(ranges), self.settings.bitget_history_concurrency):
+            batch = ranges[index:index + self.settings.bitget_history_concurrency]
+            for range_start, range_end in batch:
+                logger.info("requesting missing range: start=%s end=%s", range_start, range_end)
+            results = await asyncio.gather(*[
+                self._fetch_range(symbol, timeframe, range_start, range_end)
+                for range_start, range_end in batch
+            ])
+            for result in results:
+                fetched.extend(result)
+            if self.settings.bitget_rate_limit_wait_seconds:
+                await asyncio.sleep(self.settings.bitget_rate_limit_wait_seconds)
         combined, report = validate_candles([*existing, *fetched], timeframe)
         if report.missing_period_count:
             logger.warning("historical data gaps detected: %s", report.as_dict())
@@ -68,6 +73,12 @@ class HistoricalDataDownloader:
             page_start = max(start, cursor - HISTORY_PAGE_LIMIT * interval)
             windows.append((page_start, cursor))
             cursor = page_start
+        if windows:
+            logger.info(
+                "earliest history window: page_start=%s page_end=%s",
+                windows[-1][0],
+                windows[-1][1],
+            )
         fetched: list[Candle] = []
         for index in range(0, len(windows), self.settings.bitget_history_concurrency):
             batch = windows[index:index + self.settings.bitget_history_concurrency]

@@ -13,6 +13,7 @@ from app.config import (
     BITGET_CANDLES_PATH,
     BITGET_CONTRACTS_PATH,
     BITGET_HISTORY_CANDLES_PATH,
+    GRANULARITY_MILLISECONDS,
     SUPPORTED_GRANULARITIES,
     Settings,
 )
@@ -156,20 +157,37 @@ class BitgetRestClient:
             raise ValueError("symbol and a valid UTC millisecond time range are required")
         if not 1 <= limit <= 200:
             raise ValueError("historical candle limit must be between 1 and 200")
+        # Bitget's history endpoint treats startTime/endTime as the boundary
+        # before the first returned candle. Shift the wire range by one candle
+        # while keeping this method's logical range intuitive to callers.
+        boundary_shift = GRANULARITY_MILLISECONDS[granularity]
+        api_start_time = start_time + boundary_shift
+        api_end_time = end_time + boundary_shift
         data = await self._get_data(
             BITGET_HISTORY_CANDLES_PATH,
             {
                 "symbol": symbol.upper(),
                 "productType": self.settings.bitget_usdt_futures_product_type,
                 "granularity": granularity,
-                "startTime": start_time,
-                "endTime": end_time,
+                "startTime": api_start_time,
+                "endTime": api_end_time,
                 "limit": limit,
             },
         )
         if not isinstance(data, list):
             raise BitgetInvalidResponseError("historical candles response data must be a list")
-        return sorted([self._parse_candle(row) for row in data], key=lambda candle: candle.timestamp)
+        candles = sorted([self._parse_candle(row) for row in data], key=lambda candle: candle.timestamp)
+        logger.info(
+            "history response: logical_start=%s logical_end=%s api_startTime=%s api_endTime=%s first_timestamp=%s last_timestamp=%s count=%s",
+            start_time,
+            end_time,
+            api_start_time,
+            api_end_time,
+            candles[0].timestamp if candles else None,
+            candles[-1].timestamp if candles else None,
+            len(candles),
+        )
+        return candles
 
     async def _get_data(self, path: str, params: dict[str, Any]) -> Any:
         response: httpx.Response | None = None
